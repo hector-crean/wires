@@ -7,7 +7,6 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
-use tower_http::services::ServeDir;
 use tracing::{Level, error, info};
 use tracing_subscriber::FmtSubscriber;
 use wires::signaling::{SignalingService, signaling_conn};

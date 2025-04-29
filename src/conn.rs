@@ -140,7 +140,7 @@ where
             processing_loop,
             awareness,
             inbox,
-            _stream: PhantomData::default(),
+            _stream: PhantomData,
         }
     }
 
@@ -154,7 +154,7 @@ where
         let reader = MessageReader::new(&mut decoder);
         for r in reader {
             let msg = r?;
-            if let Some(reply) = handle_msg(protocol, &awareness, msg).await? {
+            if let Some(reply) = handle_msg(protocol, awareness, msg).await? {
                 let mut sender = sink.lock().await;
                 if let Err(e) = sender.send(reply.encode_v1()).await {
                     println!("connection failed to send back the reply");
@@ -242,8 +242,26 @@ mod test {
     use yrs::updates::encoder::Encode;
     use yrs::{Doc, GetString, Subscription, Text, Transact};
 
+
+    pub async fn client(
+        addr: SocketAddr,
+        doc: Doc,
+    ) -> Result<Connection<WrappedSink, WrappedStream>, Box<dyn std::error::Error>> {
+        let stream = TcpSocket::new_v4()?.connect(addr).await?;
+        let (reader, writer) = stream.into_split();
+        let stream: WrappedStream = WrappedStream::new(reader, YrsCodec::default());
+        let sink: WrappedSink = WrappedSink::new(writer, YrsCodec::default());
+        Ok(Connection::new(
+            Arc::new(RwLock::new(Awareness::new(doc))),
+            sink,
+            stream,
+        ))
+    }
+
+
+
     #[derive(Debug, Default)]
-    struct YrsCodec(LengthDelimitedCodec);
+    pub struct YrsCodec(LengthDelimitedCodec);
 
     impl Encoder<Vec<u8>> for YrsCodec {
         type Error = Error;
@@ -287,20 +305,7 @@ mod test {
         }))
     }
 
-    async fn client(
-        addr: SocketAddr,
-        doc: Doc,
-    ) -> Result<Connection<WrappedSink, WrappedStream>, Box<dyn std::error::Error>> {
-        let stream = TcpSocket::new_v4()?.connect(addr).await?;
-        let (reader, writer) = stream.into_split();
-        let stream: WrappedStream = WrappedStream::new(reader, YrsCodec::default());
-        let sink: WrappedSink = WrappedSink::new(writer, YrsCodec::default());
-        Ok(Connection::new(
-            Arc::new(RwLock::new(Awareness::new(doc))),
-            sink,
-            stream,
-        ))
-    }
+
 
     fn create_notifier(doc: &Doc) -> (Arc<Notify>, Subscription) {
         let n = Arc::new(Notify::new());
@@ -322,11 +327,11 @@ mod test {
         let text = doc.get_or_insert_text("test");
         let awareness = Arc::new(RwLock::new(Awareness::new(doc)));
         let bcast = BroadcastGroup::new(awareness.clone(), 10).await;
-        let _server = start_server(server_addr.clone(), bcast).await?;
+        let _server = start_server(server_addr, bcast).await?;
 
         let doc = Doc::new();
         let (n, _sub) = create_notifier(&doc);
-        let c1 = client(server_addr.clone(), doc).await?;
+        let c1 = client(server_addr, doc).await?;
 
         {
             let lock = awareness.write().await;
@@ -356,11 +361,11 @@ mod test {
 
         let awareness = Arc::new(RwLock::new(Awareness::new(doc)));
         let bcast = BroadcastGroup::new(awareness.clone(), 10).await;
-        let _server = start_server(server_addr.clone(), bcast).await?;
+        let _server = start_server(server_addr, bcast).await?;
 
         let doc = Doc::new();
         let (n, _sub) = create_notifier(&doc);
-        let c1 = client(server_addr.clone(), doc).await?;
+        let c1 = client(server_addr, doc).await?;
 
         timeout(TIMEOUT, n.notified()).await?;
 
@@ -383,10 +388,10 @@ mod test {
 
         let awareness = Arc::new(RwLock::new(Awareness::new(doc)));
         let bcast = BroadcastGroup::new(awareness.clone(), 10).await;
-        let _server = start_server(server_addr.clone(), bcast).await?;
+        let _server = start_server(server_addr, bcast).await?;
 
         let d1 = Doc::with_client_id(2);
-        let c1 = client(server_addr.clone(), d1).await?;
+        let c1 = client(server_addr, d1).await?;
         // by default changes made by document on the client side are not propagated automatically
         let _sub11 = {
             let sink = c1.sink();
@@ -407,7 +412,7 @@ mod test {
 
         let d2 = Doc::with_client_id(3);
         let (n2, _sub2) = create_notifier(&d2);
-        let c2 = client(server_addr.clone(), d2).await?;
+        let c2 = client(server_addr, d2).await?;
 
         {
             let a = c1.awareness().write().await;
@@ -437,10 +442,10 @@ mod test {
 
         let awareness = Arc::new(RwLock::new(Awareness::new(doc)));
         let bcast = BroadcastGroup::new(awareness.clone(), 10).await;
-        let _server = start_server(server_addr.clone(), bcast).await?;
+        let _server = start_server(server_addr, bcast).await?;
 
         let d1 = Doc::with_client_id(2);
-        let c1 = client(server_addr.clone(), d1).await?;
+        let c1 = client(server_addr, d1).await?;
         // by default changes made by document on the client side are not propagated automatically
         let _sub11 = {
             let sink = c1.sink();
@@ -461,11 +466,11 @@ mod test {
 
         let d2 = Doc::with_client_id(3);
         let (n2, sub2) = create_notifier(&d2);
-        let c2 = client(server_addr.clone(), d2).await?;
+        let c2 = client(server_addr, d2).await?;
 
         let d3 = Doc::with_client_id(4);
         let (n3, sub3) = create_notifier(&d3);
-        let c3 = client(server_addr.clone(), d3).await?;
+        let c3 = client(server_addr, d3).await?;
 
         {
             let a = c1.awareness().write().await;

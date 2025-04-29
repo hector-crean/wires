@@ -68,7 +68,7 @@ impl BroadcastGroup {
             changed.extend_from_slice(updated);
             changed.extend_from_slice(removed);
 
-            if let Err(_) = tx.send(changed) {
+            if tx.send(changed).is_err() {
                 tracing::warn!("failed to send awareness update");
             }
         });
@@ -79,7 +79,7 @@ impl BroadcastGroup {
                     let awareness = awareness.read().await;
                     match awareness.update_with_clients(changed_clients) {
                         Ok(update) => {
-                            if let Err(_) = sink.send(Message::Awareness(update).encode_v1()) {
+                            if sink.send(Message::Awareness(update).encode_v1()).is_err() {
                                 tracing::warn!("couldn't broadcast awareness update");
                             }
                         }
@@ -201,34 +201,34 @@ impl BroadcastGroup {
             Message::Sync(msg) => match msg {
                 SyncMessage::SyncStep1(state_vector) => {
                     let awareness = awareness.read().await;
-                    protocol.handle_sync_step1(&*awareness, state_vector)
+                    protocol.handle_sync_step1(&awareness, state_vector)
                 }
                 SyncMessage::SyncStep2(update) => {
                     let mut awareness = awareness.write().await;
                     let update = Update::decode_v1(&update)?;
-                    protocol.handle_sync_step2(&mut *awareness, update)
+                    protocol.handle_sync_step2(&mut awareness, update)
                 }
                 SyncMessage::Update(update) => {
                     let mut awareness = awareness.write().await;
                     let update = Update::decode_v1(&update)?;
-                    protocol.handle_sync_step2(&mut *awareness, update)
+                    protocol.handle_sync_step2(&mut awareness, update)
                 }
             },
             Message::Auth(deny_reason) => {
                 let awareness = awareness.read().await;
-                protocol.handle_auth(&*awareness, deny_reason)
+                protocol.handle_auth(&awareness, deny_reason)
             }
             Message::AwarenessQuery => {
                 let awareness = awareness.read().await;
-                protocol.handle_awareness_query(&*awareness)
+                protocol.handle_awareness_query(&awareness)
             }
             Message::Awareness(update) => {
                 let mut awareness = awareness.write().await;
-                protocol.handle_awareness_update(&mut *awareness, update)
+                protocol.handle_awareness_update(&mut awareness, update)
             }
             Message::Custom(tag, data) => {
                 let mut awareness = awareness.write().await;
-                protocol.missing_handle(&mut *awareness, tag, data)
+                protocol.missing_handle(&mut awareness, tag, data)
             }
         }
     }
@@ -337,7 +337,7 @@ mod test {
 
         // check awareness update propagation
         {
-            let mut a = awareness.write().await;
+            let a = awareness.write().await;
             a.set_local_state(r#"{"key":"value"}"#)?;
         }
 

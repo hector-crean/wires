@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+pub mod client;
 pub mod broadcast;
 pub mod conn;
 pub mod error;
